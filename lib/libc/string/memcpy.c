@@ -33,6 +33,10 @@
 
 #include <stdint.h>
 #include <string.h>
+
+#ifdef OCTEON_MEMOPS
+#include "octeon_memops.h"
+#endif
 #include <stdlib.h>
 #include <syslog.h>
 
@@ -113,6 +117,38 @@ memcpy(void *dst0, const void *src0, size_t length)
 	 */
 #define	TLOOP(s) if (t) TLOOP1(s)
 #define	TLOOP1(s) do { s; } while (--t)
+
+#ifdef OCTEON_MEMOPS
+	if (length >= 16 && (((uintptr_t)src ^ (uintptr_t)dst) & wmask)) {
+		while ((uintptr_t)dst & wmask) {
+			*dst++ = *src++;
+			length--;
+		}
+		while (length >= 4 * wsize) {
+			octeon_word a = octeon_load(src);
+			octeon_word b = octeon_load(src + wsize);
+			octeon_word c = octeon_load(src + 2 * wsize);
+			octeon_word d = octeon_load(src + 3 * wsize);
+
+			((octeon_word *)dst)[0] = a;
+			((octeon_word *)dst)[1] = b;
+			((octeon_word *)dst)[2] = c;
+			((octeon_word *)dst)[3] = d;
+			src += 4 * wsize;
+			dst += 4 * wsize;
+			length -= 4 * wsize;
+		}
+		while (length >= wsize) {
+			*(octeon_word *)dst = octeon_load(src);
+			src += wsize;
+			dst += wsize;
+			length -= wsize;
+		}
+		t = length;
+		TLOOP(*dst++ = *src++);
+		goto done;
+	}
+#endif
 
 	/*
 	 * Copy forward.

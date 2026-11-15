@@ -33,6 +33,10 @@
 
 #include <string.h>
 
+#ifdef OCTEON_MEMOPS
+#include "octeon_memops.h"
+#endif
+
 /*
  * Compare memory regions.
  */
@@ -42,6 +46,36 @@ memcmp(const void *s1, const void *s2, size_t n)
 	if (n != 0) {
 		const unsigned char *p1 = s1, *p2 = s2;
 
+#ifdef OCTEON_MEMOPS
+		if (n >= 16) {
+			if (*p1 != *p2)
+				return (*p1 - *p2);
+			while ((uintptr_t)p1 & OCTEON_WORD_MASK) {
+				if (*p1 != *p2)
+					return (*p1 - *p2);
+				p1++;
+				p2++;
+				n--;
+			}
+			while (n >= OCTEON_WORD_SIZE) {
+				octeon_word a = *(const octeon_word *)p1;
+				octeon_word b = octeon_load(p2);
+
+				if (a != b) {
+					unsigned int shift =
+					    56 - (__builtin_clzll(a ^ b) & ~7U);
+
+					return ((int)((a >> shift) & 255) -
+					    (int)((b >> shift) & 255));
+				}
+				p1 += OCTEON_WORD_SIZE;
+				p2 += OCTEON_WORD_SIZE;
+				n -= OCTEON_WORD_SIZE;
+			}
+			if (n == 0)
+				return (0);
+		}
+#endif
 		do {
 			if (*p1++ != *p2++)
 				return (*--p1 - *--p2);

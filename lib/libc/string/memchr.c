@@ -33,12 +33,42 @@
 
 #include <string.h>
 
+#ifdef OCTEON_MEMOPS
+#include "octeon_memops.h"
+#endif
+
 void *
 memchr(const void *s, int c, size_t n)
 {
 	if (n != 0) {
 		const unsigned char *p = s;
 
+#ifdef OCTEON_MEMOPS
+		if (n >= OCTEON_WORD_SIZE) {
+			const octeon_word ones = 0x0101010101010101ULL;
+			const octeon_word highs = 0x8080808080808080ULL;
+			octeon_word mask = ones * (unsigned char)c;
+
+			while ((uintptr_t)p & OCTEON_WORD_MASK) {
+				if (*p == (unsigned char)c)
+					return ((void *)p);
+				p++;
+				n--;
+			}
+			while (n >= OCTEON_WORD_SIZE) {
+				octeon_word x = *(const octeon_word *)p ^ mask;
+
+				/* Mask each matching byte without cross-byte borrows. */
+				x = ~(((x & ~highs) + ~highs) | x) & highs;
+				if (x != 0)
+					return ((void *)(p + __builtin_clzll(x) / 8));
+				p += OCTEON_WORD_SIZE;
+				n -= OCTEON_WORD_SIZE;
+			}
+			if (n == 0)
+				return (NULL);
+		}
+#endif
 		do {
 			if (*p++ == (unsigned char)c)
 				return ((void *)(p - 1));

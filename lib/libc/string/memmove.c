@@ -33,6 +33,10 @@
 
 #include <string.h>
 
+#ifdef OCTEON_MEMOPS
+#include "octeon_memops.h"
+#endif
+
 /*
  * sizeof(word) MUST BE A POWER OF TWO
  * SO THAT wmask BELOW IS ALL ONES
@@ -54,6 +58,55 @@ memmove(void *dst0, const void *src0, size_t length)
 
 	if (length == 0 || dst == src)		/* nothing to do */
 		goto done;
+
+#ifdef OCTEON_MEMOPS
+	if (length >= 16 && (((uintptr_t)dst ^ (uintptr_t)src) & wmask)) {
+		uintptr_t d = (uintptr_t)dst, s = (uintptr_t)src;
+		size_t gap = d < s ? s - d : d - s;
+
+		if (gap >= length && length >= 64)
+			return memcpy(dst0, src0, length);
+
+		if (d < s) {
+			while ((uintptr_t)dst & wmask) {
+				*dst++ = *src++;
+				length--;
+			}
+			while (length >= 2 * wsize) {
+				octeon_word a = octeon_load(src);
+				octeon_word b = octeon_load(src + wsize);
+
+				((octeon_word *)dst)[0] = a;
+				((octeon_word *)dst)[1] = b;
+				src += 2 * wsize;
+				dst += 2 * wsize;
+				length -= 2 * wsize;
+			}
+			while (length-- != 0)
+				*dst++ = *src++;
+		} else {
+			src += length;
+			dst += length;
+			while ((uintptr_t)dst & wmask) {
+				*--dst = *--src;
+				length--;
+			}
+			while (length >= 2 * wsize) {
+				octeon_word a = octeon_load(src - 2 * wsize);
+				octeon_word b = octeon_load(src - wsize);
+
+				src -= 2 * wsize;
+				dst -= 2 * wsize;
+				((octeon_word *)dst)[0] = a;
+				((octeon_word *)dst)[1] = b;
+				length -= 2 * wsize;
+			}
+			while (length-- != 0)
+				*--dst = *--src;
+		}
+		goto done;
+	}
+#endif
 
 	/*
 	 * Macros: loop-t-times; and loop-t-times, t>0
