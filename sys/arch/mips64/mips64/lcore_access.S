@@ -134,11 +134,26 @@ END(copystr)
  */
 LEAF(mem_zero_page, 0)
 	LI	v0, PAGE_SIZE
+#ifdef CPU_OCTEON
+1:
+	PTR_SUBU v0, 64
+	sd	zero, 0(a0)
+	sd	zero, 8(a0)
+	sd	zero, 16(a0)
+	sd	zero, 24(a0)
+	sd	zero, 32(a0)
+	sd	zero, 40(a0)
+	sd	zero, 48(a0)
+	sd	zero, 56(a0)
+	bne	zero, v0, 1b
+	 PTR_ADDU a0, 64
+#else
 1:
 	PTR_SUBU v0, 8
 	sd	zero, 0(a0)
 	bne	zero, v0, 1b
 	 PTR_ADDU a0, 8
+#endif
 	jr	ra
 	 NOP
 END(mem_zero_page)

@@ -68,6 +68,34 @@ memset(void *dst0, int c0, size_t length)
 	u_char *dst;
 
 	dst = dst0;
+
+#if defined(CPU_OCTEON) && !defined(BZERO) && !defined(_STANDALONE)
+	if (length >= 128) {
+		typedef uint64_t fillword __attribute__((__may_alias__));
+		fillword *words, pattern;
+		u_char byte = (u_char)c0;
+
+		pattern = (uint64_t)byte * 0x0101010101010101ULL;
+		while ((u_long)dst & (sizeof(pattern) - 1)) {
+			*dst++ = byte;
+			length--;
+		}
+
+		while (length >= 8 * sizeof(pattern)) {
+			words = (fillword *)dst;
+			words[0] = pattern;
+			words[1] = pattern;
+			words[2] = pattern;
+			words[3] = pattern;
+			words[4] = pattern;
+			words[5] = pattern;
+			words[6] = pattern;
+			words[7] = pattern;
+			dst += 8 * sizeof(pattern);
+			length -= 8 * sizeof(pattern);
+		}
+	}
+#endif
 	/*
 	 * If not enough words, just fill bytes.  A length >= 2 words
 	 * guarantees that at least one of them is `complete' after

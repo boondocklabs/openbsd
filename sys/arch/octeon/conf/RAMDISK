@@ -3,9 +3,10 @@
 machine		octeon mips64
 maxusers	4
 
-option		SMALL_KERNEL
 option		NO_PROPOLICE
 option		BOOT_CONFIG
+option		DDB
+option		SOCKET_SPLICE
 
 option		RAMDISK_HOOKS
 option		MINIROOTSIZE=10240

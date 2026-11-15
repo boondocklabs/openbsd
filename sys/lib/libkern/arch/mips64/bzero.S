@@ -66,6 +66,28 @@ ALEAF(blkclr)
 	SDHI	zero, 0(a0)		# clear 1, 2, or 3 bytes to align
 	PTR_ADDU a0, a0, a3
 1:
+#ifdef CPU_OCTEON
+	sltiu	v0, a1, 64
+	bnez	v0, .Lzero_words
+	 nop
+.Lzero_bulk:
+	sd	zero, 0(a0)
+	sd	zero, 8(a0)
+	sd	zero, 16(a0)
+	sd	zero, 24(a0)
+	sd	zero, 32(a0)
+	sd	zero, 40(a0)
+	sd	zero, 48(a0)
+	sd	zero, 56(a0)
+	PTR_SUBU a1, a1, 64
+	sltiu	v0, a1, 64
+	beqz	v0, .Lzero_bulk
+	 PTR_ADDU a0, a0, 64
+.Lzero_words:
+	sltiu	v0, a1, 8
+	bnez	v0, .Lsmallclr
+	 nop
+#endif
 	and	v0, a1, 7		# compute number of words left
 	PTR_SUBU a3, a1, v0
 	move	a1, v0

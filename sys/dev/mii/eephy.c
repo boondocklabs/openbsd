@@ -112,6 +112,8 @@ static const struct mii_phydesc eephys[] = {
 	  MII_STR_MARVELL_E1512 },
 	{ MII_OUI_MARVELL,		MII_MODEL_MARVELL_E1545,
 	  MII_STR_MARVELL_E1545 },
+	{ MII_OUI_MARVELL,		MII_MODEL_MARVELL_E1680,
+	  MII_STR_MARVELL_E1680 },
 	{ MII_OUI_MARVELL,		MII_MODEL_MARVELL_E3016,
 	  MII_STR_MARVELL_E3016},
 	{ MII_OUI_MARVELL,		MII_MODEL_MARVELL_E3082,
@@ -226,6 +228,26 @@ eephy_attach(struct device *parent, struct device *self, void *aux)
 	eephy_fdt_reg_init(sc);
 #endif
 
+	if (sc->mii_model == MII_MODEL_MARVELL_E1680) {
+		int qsgmii = (sc->mii_flags & MIIF_SGMII) != 0;
+
+#ifdef __HAVE_FDT
+		int root = OF_finddevice("/");
+
+		if (root != -1 && OF_is_compatible(root, "pan,pa-220"))
+			qsgmii = 1;
+#endif
+		/* QSGMII setup and PHY workaround used by the PA-220 U-Boot. */
+		if (qsgmii) {
+			PHY_WRITE(sc, E1000_EADR, 4);
+			PHY_WRITE(sc, 0x1b, 0x3fa0);
+			PHY_WRITE(sc, E1000_EADR, 0xfd);
+			PHY_WRITE(sc, 0x08, 0x0b53);
+			PHY_WRITE(sc, 0x07, 0x200d);
+		}
+		PHY_WRITE(sc, E1000_EADR, 0);
+	}
+
 	PHY_RESET(sc);
 
 	sc->mii_capabilities = PHY_READ(sc, E1000_SR) & ma->mii_capmask;
@@ -241,7 +263,15 @@ eephy_reset(struct mii_softc *sc)
 {
 	int reg, i;
 
+	if (sc->mii_model == MII_MODEL_MARVELL_E1680) {
+		/* The copper block has a separate power-down bit on page 0. */
+		PHY_WRITE(sc, E1000_EADR, 0);
+		reg = PHY_READ(sc, E1000_SCR);
+		PHY_WRITE(sc, E1000_SCR, reg & ~0x0004);
+	}
 	reg = PHY_READ(sc, E1000_CR);
+	if (sc->mii_model == MII_MODEL_MARVELL_E1680)
+		reg &= ~E1000_CR_POWER_DOWN;
 	reg |= E1000_CR_RESET;
 	PHY_WRITE(sc, E1000_CR, reg);
 	
@@ -251,6 +281,10 @@ eephy_reset(struct mii_softc *sc)
 		if (!(reg & E1000_CR_RESET))
 			break;
 	}
+
+	/* The 88E1680 uses a different extended register layout. */
+	if (sc->mii_model == MII_MODEL_MARVELL_E1680)
+		return;
 
 	/*
 	 * Initialize PHY Specific Control Register.

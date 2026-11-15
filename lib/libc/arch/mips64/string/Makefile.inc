@@ -6,3 +6,7 @@ SRCS+=	bcopy.S memcpy.c memmove.c \
 	memchr.c memcmp.c memset.c strcat.c strcpy.c strcspn.c \
 	strlcat.c strlcpy.c strncat.c strncmp.c strncpy.c \
 	strpbrk.c strsep.c strspn.c strstr.c swab.c
+
+.if ${MACHINE} == "octeon"
+CPPFLAGS+=	-DOCTEON_MEMCPY
+.endif

@@ -28,6 +28,31 @@
 #include <octeon/dev/iobusvar.h>
 #include <octeon/dev/cn30xxgmxreg.h>
 
+#define PA220_CPLD_RESET_REG	0x800000001b040005ULL
+#define PA220_CPLD_PHY_RESET	0x04
+
+static void
+octpip_pa220_release_phy(void)
+{
+	volatile uint8_t *reg;
+	uint8_t before, after;
+	int root;
+
+	root = OF_finddevice("/");
+	if (root == -1 || !OF_is_compatible(root, "pan,pa-220"))
+		return;
+
+	reg = (volatile uint8_t *)PA220_CPLD_RESET_REG;
+	before = *reg;
+	if ((before & PA220_CPLD_PHY_RESET) == 0)
+		return;
+	*reg = before & ~PA220_CPLD_PHY_RESET;
+	__asm volatile("sync" ::: "memory");
+	delay(50000);
+	after = *reg;
+	printf("PA-220: PHY reset register 0x%02x -> 0x%02x\n", before, after);
+}
+
 struct octpip_softc {
 	struct device		 sc_dev;
 };
@@ -62,6 +87,7 @@ octpip_attach(struct device *parent, struct device *self, void *aux)
 	int node;
 
 	printf("\n");
+	octpip_pa220_release_phy();
 
 	for (node = OF_child(faa->fa_node); node != 0; node = OF_peer(node)) {
 		if (!OF_is_compatible(node, "cavium,octeon-3860-pip-interface"))

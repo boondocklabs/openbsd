@@ -165,6 +165,52 @@ ALEAF(bcopy)
 	SDHI	v1, 0(a1)
 	PTR_ADDU a1, a1, a3
 1:
+#ifdef CPU_OCTEON
+	/* Prefetch only within the source range, including on user copies. */
+	sltiu	$24, a2, 640
+	bnez	$24, .Lcopy_words
+	 nop
+.Lcopy_bulk:
+	pref	4, 512(a0)
+	ld	$8, 0(a0)
+	ld	$9, 8(a0)
+	ld	$10, 16(a0)
+	ld	$11, 24(a0)
+	ld	$12, 32(a0)
+	ld	$13, 40(a0)
+	ld	$14, 48(a0)
+	ld	$15, 56(a0)
+	sd	$8, 0(a1)
+	sd	$9, 8(a1)
+	sd	$10, 16(a1)
+	sd	$11, 24(a1)
+	sd	$12, 32(a1)
+	sd	$13, 40(a1)
+	sd	$14, 48(a1)
+	sd	$15, 56(a1)
+	ld	$8, 64(a0)
+	ld	$9, 72(a0)
+	ld	$10, 80(a0)
+	ld	$11, 88(a0)
+	ld	$12, 96(a0)
+	ld	$13, 104(a0)
+	ld	$14, 112(a0)
+	ld	$15, 120(a0)
+	sd	$8, 64(a1)
+	sd	$9, 72(a1)
+	sd	$10, 80(a1)
+	sd	$11, 88(a1)
+	sd	$12, 96(a1)
+	sd	$13, 104(a1)
+	sd	$14, 112(a1)
+	sd	$15, 120(a1)
+	PTR_ADDU a0, a0, 128
+	PTR_SUBU a2, a2, 128
+	sltiu	$24, a2, 640
+	beqz	$24, .Lcopy_bulk
+	 PTR_ADDU a1, a1, 128
+.Lcopy_words:
+#endif
 	and	v1, a2, 7		# compute number of whole dwords left
 	PTR_SUBU a3, a2, v1
 	beq	a3, zero, .Lsmallcpy

@@ -1380,13 +1380,43 @@ cn30xxgmx_rgmii_timing(struct cn30xxgmx_port_softc *sc)
 int
 cn30xxgmx_sgmii_enable(struct cn30xxgmx_port_softc *sc, int enable)
 {
-	uint64_t ctl_reg, status, timer_count;
+	uint64_t ctl_reg, status, timer_count, misc_ctl, tx_ctl;
 	uint64_t cpu_freq = octeon_boot_info->eclock / 1000000;
 	int done;
-	int i;
+	int i, pa220, root;
 
 	if (!enable)
 		return 0;
+
+	root = OF_finddevice("/");
+	pa220 = root != -1 && OF_is_compatible(root, "pan,pa-220");
+	if (pa220) {
+		/* DLM0 is already in QSGMII mode on both GMX interfaces. */
+		tx_ctl = _GMX_PORT_RD8(sc, GMX0_TX0_SGMII_CTL);
+		if (ISSET(_GMX_PORT_RD8(sc, GMX0_TX0_APPEND),
+		    TXN_APPEND_PREAMBLE))
+			CLR(tx_ctl, TXN_SGMII_CTL_ALIGN);
+		else
+			SET(tx_ctl, TXN_SGMII_CTL_ALIGN);
+		_GMX_PORT_WR8(sc, GMX0_TX0_SGMII_CTL, tx_ctl);
+
+		misc_ctl = PCS_READ_8(sc, PCS_MISC_CTL);
+		CLR(misc_ctl, PCS_MISC_CTL_MODE | PCS_MISC_CTL_MAC_PHY);
+		PCS_WRITE_8(sc, PCS_MISC_CTL, misc_ctl);
+
+		/*
+		 * cnmac also enables the port on a copper link change.
+		 * Keep an already-negotiated serial link in that case.
+		 */
+		ctl_reg = PCS_READ_8(sc, PCS_MR_CONTROL);
+		(void)PCS_READ_8(sc, PCS_MR_STATUS);
+		status = PCS_READ_8(sc, PCS_MR_STATUS);
+		if (ISSET(ctl_reg, PCS_MR_CONTROL_AN_EN) &&
+		    !ISSET(ctl_reg, PCS_MR_CONTROL_PWR_DN) &&
+		    (status & (PCS_MR_STATUS_AN_CPT | PCS_MR_STATUS_LNK_ST)) ==
+		    (PCS_MR_STATUS_AN_CPT | PCS_MR_STATUS_LNK_ST))
+			return 0;
+	}
 
 	/* Set link timer interval to 1.6ms. */
 	timer_count = PCS_READ_8(sc, PCS_LINK_TIMER_COUNT);
@@ -1424,6 +1454,14 @@ cn30xxgmx_sgmii_enable(struct cn30xxgmx_port_softc *sc, int enable)
 		return 0;
 	}
 
+	if (pa220) {
+		/* Cavium SDK: cycle the PCS after reset, before restarting AN. */
+		SET(ctl_reg, PCS_MR_CONTROL_PWR_DN);
+		PCS_WRITE_8(sc, PCS_MR_CONTROL, ctl_reg);
+		(void)PCS_READ_8(sc, PCS_MR_CONTROL);
+		delay(25000);
+	}
+
 	/* Start a new SGMII autonegotiation. */
 	SET(ctl_reg, PCS_MR_CONTROL_AN_EN);
 	SET(ctl_reg, PCS_MR_CONTROL_RST_AN);
@@ -1432,14 +1470,22 @@ cn30xxgmx_sgmii_enable(struct cn30xxgmx_port_softc *sc, int enable)
 
 	/* Wait for the SGMII autonegotiation to complete. */
 	done = 0;
-	for (i = 0; i < 1000000; i++) {
+	for (i = 0; i < (pa220 ? 10000 : 1000000); i++) {
 		status = PCS_READ_8(sc, PCS_MR_STATUS);
 		if (ISSET(status, PCS_MR_STATUS_AN_CPT)) {
 			done = 1;
 			break;
 		}
+		if (pa220)
+			delay(10);
 	}
 	if (!done) {
+		if (pa220)
+			printf("PA-220 port %d: PCS ctl %#llx status %#llx misc %#llx\n",
+			    sc->sc_port_no,
+			    (unsigned long long)PCS_READ_8(sc, PCS_MR_CONTROL),
+			    (unsigned long long)status,
+			    (unsigned long long)PCS_READ_8(sc, PCS_MISC_CTL));
 		printf("SGMII autonegotiation timeout on port %d\n",
 		    sc->sc_port_no);
 		return 1;

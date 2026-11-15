@@ -31,6 +31,7 @@
  * SUCH DAMAGE.
  */
 
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <syslog.h>
@@ -45,6 +46,39 @@ typedef	long word;		/* "word" used for optimal copy speed */
 #define	wmask	(wsize - 1)
 
 static const char backwards_msg[] = ": backwards memcpy";
+
+#ifdef OCTEON_MEMCPY
+#define OCTEON_COPY_BLOCK	128
+#define OCTEON_PREFETCH_DISTANCE	512
+
+static __inline __attribute__((__always_inline__)) void
+octeon_copy64(char *dst, const char *src, int offset)
+{
+	uint64_t a, b, c, d, e, f, g, h;
+
+	__asm__ volatile(
+	    "ld %0, %[off]+0(%[src])\n\t"
+	    "ld %1, %[off]+8(%[src])\n\t"
+	    "ld %2, %[off]+16(%[src])\n\t"
+	    "ld %3, %[off]+24(%[src])\n\t"
+	    "ld %4, %[off]+32(%[src])\n\t"
+	    "ld %5, %[off]+40(%[src])\n\t"
+	    "ld %6, %[off]+48(%[src])\n\t"
+	    "ld %7, %[off]+56(%[src])\n\t"
+	    "sd %0, %[off]+0(%[dst])\n\t"
+	    "sd %1, %[off]+8(%[dst])\n\t"
+	    "sd %2, %[off]+16(%[dst])\n\t"
+	    "sd %3, %[off]+24(%[dst])\n\t"
+	    "sd %4, %[off]+32(%[dst])\n\t"
+	    "sd %5, %[off]+40(%[dst])\n\t"
+	    "sd %6, %[off]+48(%[dst])\n\t"
+	    "sd %7, %[off]+56(%[dst])"
+	    : "=&r"(a), "=&r"(b), "=&r"(c), "=&r"(d),
+	      "=&r"(e), "=&r"(f), "=&r"(g), "=&r"(h)
+	    : [src] "r"(src), [dst] "r"(dst), [off] "i"(offset)
+	    : "memory");
+}
+#endif
 
 /*
  * Copy a block of memory, not handling overlap.
@@ -96,6 +130,32 @@ memcpy(void *dst0, const void *src0, size_t length)
 		length -= t;
 		TLOOP1(*dst++ = *src++);
 	}
+#ifdef OCTEON_MEMCPY
+	if (length >= OCTEON_PREFETCH_DISTANCE + OCTEON_COPY_BLOCK) {
+		/* The generic alignment path has aligned both operands. */
+		t = (-(uintptr_t)dst & (OCTEON_COPY_BLOCK - 1)) / wsize;
+		length -= t * wsize;
+		TLOOP(*(word *)dst = *(const word *)src;
+		    src += wsize; dst += wsize);
+
+		/*
+		 * Prefetch the next source cache lines far enough ahead to
+		 * cover a DRAM miss. Leave at least one full block in range
+		 * beyond the prefetch address and use the generic tail.
+		 */
+		while (length >= OCTEON_PREFETCH_DISTANCE + OCTEON_COPY_BLOCK) {
+			__asm__ volatile(
+			    ".set push\n\t.set mips4\n\t"
+			    "pref 4, %1(%0)\n\t.set pop"
+			    : : "r"(src), "i"(OCTEON_PREFETCH_DISTANCE));
+			octeon_copy64(dst, src, 0);
+			octeon_copy64(dst, src, 64);
+			src += OCTEON_COPY_BLOCK;
+			dst += OCTEON_COPY_BLOCK;
+			length -= OCTEON_COPY_BLOCK;
+		}
+	}
+#endif
 	/*
 	 * Copy whole words, then mop up any trailing bytes.
 	 */

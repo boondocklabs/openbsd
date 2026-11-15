@@ -89,6 +89,8 @@
 #define	GMX0_TX0_STAT7				0x2b8
 #define	GMX0_TX0_STAT8				0x2c0
 #define	GMX0_TX0_STAT9				0x2c8
+#define	GMX0_TX0_SGMII_CTL			0x300
+#define	TXN_SGMII_CTL_ALIGN			0x1ULL
 #define	GMX0_BIST0				0x400
 #define	GMX0_RX_PRTS				0x410
 #define	GMX0_RX_BP_DROP0			0x420
