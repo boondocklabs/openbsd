@@ -8,5 +8,5 @@ SRCS+=	bcopy.S memcpy.c memmove.c \
 	strpbrk.c strsep.c strspn.c strstr.c swab.c
 
 .if ${MACHINE} == "octeon"
-CPPFLAGS+=	-DOCTEON_MEMCPY
+CPPFLAGS+=	-DOCTEON_MEMCPY -DOCTEON_MEMSET
 .endif

@@ -31,13 +31,47 @@
  * SUCH DAMAGE.
  */
 
+#include <stdint.h>
 #include <string.h>
 
 void *
 memset(void *dst, int c, size_t n)
 {
+	unsigned char *d = dst;
+
+#ifdef OCTEON_MEMSET
+	if (n >= sizeof(uint64_t)) {
+		typedef uint64_t fillword __attribute__((__may_alias__));
+		fillword *words, pattern;
+		unsigned char byte = (unsigned char)c;
+
+		while ((uintptr_t)d & (sizeof(pattern) - 1)) {
+			*d++ = byte;
+			n--;
+		}
+		pattern = (uint64_t)byte * 0x0101010101010101ULL;
+
+		while (n >= 8 * sizeof(pattern)) {
+			words = (fillword *)d;
+			words[0] = pattern;
+			words[1] = pattern;
+			words[2] = pattern;
+			words[3] = pattern;
+			words[4] = pattern;
+			words[5] = pattern;
+			words[6] = pattern;
+			words[7] = pattern;
+			d += 8 * sizeof(pattern);
+			n -= 8 * sizeof(pattern);
+		}
+		while (n >= sizeof(pattern)) {
+			*(fillword *)d = pattern;
+			d += sizeof(pattern);
+			n -= sizeof(pattern);
+		}
+	}
+#endif
 	if (n != 0) {
-		unsigned char *d = dst;
 
 		do
 			*d++ = (unsigned char)c;
