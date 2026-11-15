@@ -22,6 +22,7 @@
 #include <sys/proc.h>
 
 #include <dev/clock_subr.h>
+#include <dev/ofw/openfirm.h>
 
 #include <machine/bus.h>
 #include <machine/autoconf.h>
@@ -36,10 +37,14 @@
 #define MIO_TWS_SW_TWSI		0x0001180000001000ULL
 #define MIO_TWS_SW_TWSI_EXT	0x0001180000001018ULL
 #define OCTRTC_REG	0x68
+#define DS1338_CH	0x80	/* Seconds register */
+#define DS1338_CTRL	7
+#define DS1338_OSF	0x20
 
 struct octrtc_softc {
 	struct device			sc_dev;
 	struct todr_chip_handle		sc_todr;
+	int				sc_ds1338;
 };
 
 struct cfdriver octrtc_cd = {
@@ -50,10 +55,10 @@ int	octrtc_match(struct device *, void *, void *);
 void	octrtc_attach(struct device *, struct device *, void *);
 
 int	octrtc_gettime(struct todr_chip_handle *, struct timeval *);
-int	octrtc_read(uint8_t *, char);
+int	octrtc_read(uint8_t *, int);
 
 int	octrtc_settime(struct todr_chip_handle *, struct timeval *);
-int	octrtc_write(uint8_t);
+int	octrtc_write(int, uint8_t);
 
 
 const struct cfattach octrtc_ca = {
@@ -110,18 +115,22 @@ octrtc_attach(struct device *parent, struct device *self, void *aux)
 {
 	struct octrtc_softc *sc = (struct octrtc_softc *)self;
 
+	int root = OF_finddevice("/");
+
+	sc->sc_ds1338 = root != -1 && OF_is_compatible(root, "pan,pa-220");
 	sc->sc_todr.cookie = sc;
 	sc->sc_todr.todr_gettime = octrtc_gettime;
 	sc->sc_todr.todr_settime = octrtc_settime;
 	sc->sc_todr.todr_quality = 0;
 	todr_attach(&sc->sc_todr);
 
-	printf(": DS1337\n");
+	printf(": %s\n", sc->sc_ds1338 ? "DS1338" : "DS1337");
 }
 
 int
 octrtc_gettime(struct todr_chip_handle *handle, struct timeval *tv)
 {
+	struct octrtc_softc *sc = handle->cookie;
 	struct clock_ymdhms dt;
 	uint8_t tod[8];
 	uint8_t check;
@@ -131,14 +140,14 @@ octrtc_gettime(struct todr_chip_handle *handle, struct timeval *tv)
 
 	DPRINTF(("\nTOD: "));
 	while (nretries--) {
-		rc = octrtc_read(&tod[0], 1);	/* ia read */
+		rc = octrtc_read(&tod[0], 0);	/* ia read */
 		if (rc) {
 			DPRINTF(("octrtc_read(0) failed %d", rc));
 			return EIO;
 		}
 
 		for (i = 1; i < 8; i++) {
-			rc = octrtc_read(&tod[i], 0);	/* current address */
+			rc = octrtc_read(&tod[i], sc->sc_ds1338 ? i : -1);
 			if (rc) {
 				DPRINTF(("octrtc_read(%d) failed %d", i, rc));
 				return EIO;
@@ -147,18 +156,23 @@ octrtc_gettime(struct todr_chip_handle *handle, struct timeval *tv)
 		}
 
 		/* Check against time-wrap */
-		rc = octrtc_read(&check, 1);	/* ia read */
+		rc = octrtc_read(&check, 0);	/* ia read */
 		if (rc) {
 			DPRINTF(("octrtc_read(check) failed %d", rc));
 			return EIO;
 		}
-		if ((check & 0xf) == (tod[0] & 0xf))
+		if (check == tod[0])
 			break;
 	}
+	if (nretries < 0)
+		return EIO;
+	if (sc->sc_ds1338 && ((tod[0] & DS1338_CH) ||
+	    (tod[DS1338_CTRL] & DS1338_OSF)))
+		return EINVAL;
 	DPRINTF(("\n"));
 
 	DPRINTF(("Time: %d %d %d (%d) %02d:%02d:%02d\n",
-	    ((tod[5] & 0x80) ? 2000 : 1900) + FROMBCD(tod[6]),	/* year */
+	    (sc->sc_ds1338 || (tod[5] & 0x80) ? 2000 : 1900) + FROMBCD(tod[6]),	/* year */
 	    FROMBCD(tod[5] & 0x1f),	/* month */
 	    FROMBCD(tod[4] & 0x3f),	/* day */
 	    (tod[3] & 0x7),		/* day of the week */
@@ -166,12 +180,14 @@ octrtc_gettime(struct todr_chip_handle *handle, struct timeval *tv)
 	    FROMBCD(tod[1] & 0x7f),	/* minute */
 	    FROMBCD(tod[0] & 0x7f)));	/* second */
 
-	dt.dt_year = ((tod[5] & 0x80) ? 2000 : 1900) + FROMBCD(tod[6]);
+	dt.dt_year = (sc->sc_ds1338 || (tod[5] & 0x80) ? 2000 : 1900) + FROMBCD(tod[6]);
 	dt.dt_mon = FROMBCD(tod[5] & 0x1f);
 	dt.dt_day = FROMBCD(tod[4] & 0x3f);
-	dt.dt_hour = FROMBCD(tod[2] & 0x3f);
-	if ((tod[2] & 0x40) && (tod[2] & 0x20))	/* adjust AM/PM format */
-		dt.dt_hour = (dt.dt_hour + 12) % 24;
+	if (tod[2] & 0x40)
+		dt.dt_hour = FROMBCD(tod[2] & 0x1f) % 12 +
+		    ((tod[2] & 0x20) ? 12 : 0);
+	else
+		dt.dt_hour = FROMBCD(tod[2] & 0x3f);
 	dt.dt_min = FROMBCD(tod[1] & 0x7f);
 	dt.dt_sec = FROMBCD(tod[0] & 0x7f);
 
@@ -187,9 +203,9 @@ octrtc_gettime(struct todr_chip_handle *handle, struct timeval *tv)
 }
 
 int
-octrtc_read(uint8_t *data, char ia)
+octrtc_read(uint8_t *data, int reg)
 {
-	int nretries = 5;
+	int nretries = 5, npoll;
 	union mio_tws_sw_twsi_reg twsi;
 
 again:
@@ -198,16 +214,22 @@ again:
 	twsi.field.r = 1;
 	twsi.field.sovr = 1;
 	twsi.field.a = OCTRTC_REG;
-	if (ia) {
+	if (reg >= 0) {
 		twsi.field.op = 1;
+		twsi.field.ia = reg >> 3;
+		twsi.field.eop_ia = reg & 7;
 	}
 
 	octeon_xkphys_write_8(MIO_TWS_SW_TWSI, twsi.reg);
 	/* The 1st bit is cleared when the operation is complete */
-	do {
+	for (npoll = 0; npoll < 128; npoll++) {
 		delay(1000);
 		twsi.reg = octeon_xkphys_read_8(MIO_TWS_SW_TWSI);
-	} while (twsi.field.v);
+		if (!twsi.field.v)
+			break;
+	}
+	if (twsi.field.v)
+		return ETIMEDOUT;
 	DPRINTF(("%#llX ", twsi.reg));
 
 	/*
@@ -237,11 +259,12 @@ again:
 int
 octrtc_settime(struct todr_chip_handle *handle, struct timeval *tv)
 {
+	struct octrtc_softc *sc = handle->cookie;
 	struct clock_ymdhms dt;
 	int nretries = 2;
 	int rc, i;
 	uint8_t tod[8];
-	uint8_t check;
+	uint8_t check, control;
 
 	clock_secs_to_ymdhms(tv->tv_sec, &dt);
 
@@ -255,54 +278,64 @@ octrtc_settime(struct todr_chip_handle *handle, struct timeval *tv)
 	tod[3] = TOBCD(dt.dt_wday + 1);
 	tod[4] = TOBCD(dt.dt_day);
 	tod[5] = TOBCD(dt.dt_mon);
-	if (dt.dt_year >= 2000)
+	if (sc->sc_ds1338 && (dt.dt_year < 2000 || dt.dt_year >= 2100))
+		return EINVAL;
+	if (!sc->sc_ds1338 && dt.dt_year >= 2000)
 		tod[5] |= 0x80;
 	tod[6] = TOBCD(dt.dt_year % 100);
 
 	while (nretries--) {
 		for (i = 0; i < 7; i++) {
-			rc = octrtc_write(tod[i]);
+			rc = octrtc_write(i, tod[i]);
 			if (rc) {
 				DPRINTF(("octrtc_write(%d) failed %d", i, rc));
 				return EIO;
 			}
 		}
 
-		rc = octrtc_read(&check, 1);
+		rc = octrtc_read(&check, 0);
 		if (rc) {
 			DPRINTF(("octrtc_read(check) failed %d", rc));
 			return EIO;
 		}
 
-		if ((check & 0xf) == (tod[0] & 0xf))
-			break;
+		if (check == tod[0]) {
+			if (!sc->sc_ds1338)
+				return 0;
+			rc = octrtc_read(&control, DS1338_CTRL);
+			if (rc)
+				return rc;
+			if (!(control & DS1338_OSF))
+				return 0;
+			return octrtc_write(DS1338_CTRL, control & ~DS1338_OSF);
+		}
 	}
 
-	return 0;
+	return EIO;
 }
 
 int
-octrtc_write(uint8_t data)
+octrtc_write(int reg, uint8_t data)
 {
 	union mio_tws_sw_twsi_reg twsi;
-	int npoll = 128;
+	int i;
 
 	twsi.reg = 0;
 	twsi.field.v = 1;
 	twsi.field.sovr = 1;
 	twsi.field.op = 1;
 	twsi.field.a = OCTRTC_REG;
-	twsi.field.d = data & 0xffffffff;
+	twsi.field.ia = reg >> 3;
+	twsi.field.eop_ia = reg & 7;
+	twsi.field.d = data;
 
 	octeon_xkphys_write_8(MIO_TWS_SW_TWSI_EXT, 0);
 	octeon_xkphys_write_8(MIO_TWS_SW_TWSI, twsi.reg);
-	do {
+	for (i = 0; i < 128; i++) {
 		delay(1000);
 		twsi.reg = octeon_xkphys_read_8(MIO_TWS_SW_TWSI);
-	} while (twsi.field.v);
-
-	/* Try to read back */
-	while (npoll-- && octrtc_read(&data, 0));
-
-	return npoll ? 0 : EIO;
+		if (!twsi.field.v)
+			return twsi.field.r ? 0 : EIO;
+	}
+	return ETIMEDOUT;
 }
