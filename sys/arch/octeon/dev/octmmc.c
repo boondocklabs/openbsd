@@ -67,6 +67,10 @@
 
 #define divround(n, d) (((n) + (d) / 2) / (d))
 
+extern int pa220_mmc_ddr_khz;
+
+#define OCTMMC_DDR_WIDTH	(4ull << MIO_EMM_SWITCH_BUS_WIDTH_SHIFT)
+
 struct octmmc_softc;
 
 struct octmmc_bus {
@@ -76,6 +80,7 @@ struct octmmc_bus {
 	uint32_t		 bus_cmd_skew;
 	uint32_t		 bus_dat_skew;
 	uint32_t		 bus_max_freq;		/* in kHz */
+	int			 bus_ddr_freq;		/* in kHz */
 	uint64_t		 bus_switch;
 	uint64_t		 bus_rca;
 	uint64_t		 bus_wdog;
@@ -179,7 +184,7 @@ octmmc_attach(struct device *parent, struct device *self, void *aux)
 	const int *interrupts;
 	uint64_t reg;
 	uint32_t bus_id, bus_width;
-	int i, node;
+	int i, node, root;
 	int maxsegs, rsegs;
 
 	if (OF_is_compatible(fa->fa_node, "cavium,octeon-7890-mmc")) {
@@ -263,6 +268,7 @@ octmmc_attach(struct device *parent, struct device *self, void *aux)
 
 	mtx_init(&sc->sc_intr_mtx, IPL_SDMMC);
 
+	root = OF_finddevice("/");
 	for (node = OF_child(fa->fa_node); node != 0; node = OF_peer(node)) {
 		if (!OF_is_compatible(node, "cavium,octeon-6130-mmc-slot"))
 			continue;
@@ -310,6 +316,11 @@ octmmc_attach(struct device *parent, struct device *self, void *aux)
 			saa.caps |= SMC_CAPS_8BIT_MODE;
 		if (bus_width >= 4)
 			saa.caps |= SMC_CAPS_4BIT_MODE;
+		if (pa220_mmc_ddr_khz && bus_id == 0 && bus_width == 8 &&
+		    root != -1 && OF_is_compatible(root, "pan,pa-220")) {
+			bus->bus_ddr_freq = pa220_mmc_ddr_khz;
+			saa.caps |= SMC_CAPS_MMC_DDR52 | SMC_CAPS_MMC_DDR52_3V3;
+		}
 
 		bus->bus_sdmmc = config_found(&sc->sc_dev, &saa, NULL);
 		if (bus->bus_sdmmc == NULL)
@@ -535,7 +546,20 @@ octmmc_bus_clock(sdmmc_chipset_handle_t sch, int freq, int timing)
 		return 0;
 	if (freq > bus->bus_max_freq)
 		freq = bus->bus_max_freq;
-	period = divround(ioclock, freq * 1000 * 2);
+	if (timing == SDMMC_TIMING_MMC_DDR52) {
+		if (bus->bus_ddr_freq == 0)
+			return ENOTSUP;
+		if (freq > bus->bus_ddr_freq)
+			freq = bus->bus_ddr_freq;
+		/* Keep the actual clock at or below the requested limit. */
+		period = (ioclock + freq * 2000 - 1) / (freq * 2000);
+		bus->bus_switch |= OCTMMC_DDR_WIDTH;
+		printf("%s: 8-bit DDR at %llu Hz (3.3 V)\n",
+		    DEVNAME(bus->bus_hc), ioclock / (2 * period));
+	} else {
+		period = divround(ioclock, freq * 1000 * 2);
+		bus->bus_switch &= ~OCTMMC_DDR_WIDTH;
+	}
 	if (period > MIO_EMM_SWITCH_CLK_MAX)
 		period = MIO_EMM_SWITCH_CLK_MAX;
 

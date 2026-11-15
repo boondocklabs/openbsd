@@ -108,6 +108,7 @@ struct boot_info *octeon_boot_info;
 
 void		*octeon_fdt;
 unsigned int	 octeon_ver;
+int		 pa220_mmc_ddr_khz = 50000;
 
 /*
  * safepri is a safe priority for sleep to set for a spin-wait
@@ -887,6 +888,16 @@ process_bootargs(void)
 			parse_uboot_root(arg + 8);
 			continue;
 		}
+
+		/* Allow an SDR override or a lower PA-220 DDR clock. */
+		if (strcmp(arg, "mmcddr=sdr") == 0)
+			pa220_mmc_ddr_khz = 0;
+		else if (strcmp(arg, "mmcddr=25") == 0)
+			pa220_mmc_ddr_khz = 25000;
+		else if (strcmp(arg, "mmcddr=42") == 0)
+			pa220_mmc_ddr_khz = 42000;
+		else if (strcmp(arg, "mmcddr=50") == 0)
+			pa220_mmc_ddr_khz = 50000;
 
 		if (*arg != '-')
 			continue;

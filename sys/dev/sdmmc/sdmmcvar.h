@@ -203,6 +203,7 @@ struct sdmmc_softc {
 #define SMC_CAPS_MMC_HS200	0x4000	/* eMMC HS200 timing */
 #define SMC_CAPS_MMC_HS400	0x8000	/* eMMC HS400 timing */
 #define SMC_CAPS_NONREMOVABLE	0x10000	/* non-removable devices */
+#define SMC_CAPS_MMC_DDR52_3V3	0x20000	/* eMMC DDR52 at fixed 3.3 V */
 
 	int sc_function_count;		/* number of I/O functions (SDIO) */
 	struct sdmmc_function *sc_card;	/* selected card */

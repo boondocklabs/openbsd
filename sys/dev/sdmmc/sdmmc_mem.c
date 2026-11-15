@@ -879,6 +879,9 @@ sdmmc_mem_mmc_init(struct sdmmc_softc *sc, struct sdmmc_function *sf)
 		}
 
 		card_type = ext_csd[EXT_CSD_CARD_TYPE];
+		if (ISSET(sc->sc_caps, SMC_CAPS_MMC_DDR52_3V3))
+			printf("%s: eMMC EXT_CSD DEVICE_TYPE 0x%02x\n",
+			    DEVNAME(sc), card_type);
 
 		if (card_type & EXT_CSD_CARD_TYPE_F_HS200_1_8V &&
 		    ISSET(sc->sc_caps, SMC_CAPS_MMC_HS200)) {
@@ -992,12 +995,14 @@ sdmmc_mem_mmc_init(struct sdmmc_softc *sc, struct sdmmc_function *sf)
 
 			sdmmc_delay(10000);
 
-			error = sdmmc_chip_signal_voltage(sc->sct, sc->sch,
-			    SDMMC_SIGNAL_VOLTAGE_180);
-			if (error) {
-				printf("%s: can't switch signalling voltage\n",
-				    DEVNAME(sc));
-				return error;
+			if (!ISSET(sc->sc_caps, SMC_CAPS_MMC_DDR52_3V3)) {
+				error = sdmmc_chip_signal_voltage(sc->sct,
+				    sc->sch, SDMMC_SIGNAL_VOLTAGE_180);
+				if (error) {
+					printf("%s: can't switch signalling voltage\n",
+					    DEVNAME(sc));
+					return error;
+				}
 			}
 
 			error = sdmmc_chip_bus_clock(sc->sct, sc->sch, speed, timing);
