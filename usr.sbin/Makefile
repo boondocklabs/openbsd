@@ -27,4 +27,8 @@ SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd arp authpf \
 SUBDIR+=ypbind ypldap yppoll ypset ypserv
 .endif
 
+.if ${MACHINE} == "octeon"
+SUBDIR+=pa220-leds
+.endif
+
 .include <bsd.subdir.mk>

@@ -423,4 +423,5 @@
 ./usr/local/libdata/perl5/site_perl/mips64-openbsd
 ./usr/mdec/boot
 ./usr/sbin/eeprom
+./usr/sbin/pa220-leds
 ./usr/sbin/pcidump

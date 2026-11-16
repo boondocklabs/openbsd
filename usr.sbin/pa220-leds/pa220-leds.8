@@ -1,0 +1,41 @@
+.Dd November 15, 2026
+.Dt PA220-LEDS 8
+.Os
+.Sh NAME
+.Nm pa220-leds
+.Nd display or change PA-220 Ethernet jack LED modes
+.Sh SYNOPSIS
+.Nm
+.Oo Ar port
+.Op Ar mode
+.Oc
+.Sh DESCRIPTION
+The
+.Nm
+utility displays the LED mode for each of the eight front Ethernet jacks
+on a Palo Alto Networks PA-220.
+Specify a
+.Ar port
+from 1 to 8 to display a single jack.
+Changing a mode requires superuser privileges.
+.Pp
+The available modes are:
+.Bl -tag -width link-activity
+.It Cm link-activity
+Show link on the left LED and blink the right LED on activity.
+This is the default.
+.It Cm link
+Show link on the left LED and turn the right LED off.
+.It Cm combined
+Show link and blink on activity on the left LED.
+Turn the right LED off.
+.It Cm off
+Turn off both LEDs.
+.It Cm 0x Ns Ar RL
+Set the right and left 88E1680 LED function codes, respectively.
+Each code is a single hexadecimal digit from 0 through b.
+.El
+.Pp
+Changes are reset at reboot.
+.Sh EXIT STATUS
+.Ex -std
