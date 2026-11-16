@@ -42,6 +42,7 @@
 #include <sys/kernel.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/sysctl.h>
 #include <sys/errno.h>
 #include <sys/device.h>
 #include <sys/queue.h>
@@ -74,6 +75,7 @@
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
+#include <dev/mii/miidevs.h>
 
 #include <octeon/dev/cn30xxciureg.h>
 #include <octeon/dev/cn30xxnpireg.h>
@@ -226,6 +228,13 @@ uint32_t cnmac_mac_addr_offset = 0;
 int	cnmac_mbufs_to_alloc;
 unsigned int cnmac_nrxgroups = 0;
 unsigned int cnmac_nrxgroups_order = 0;
+#define PA220_LED_PORTS		8
+#define PA220_LED_LINK_ACTIVITY	0x40
+
+static struct cnmac_softc *cnmac_led_ports[PA220_LED_PORTS];
+
+int	cnmac_pa220_led_sysctl(int, void *, size_t *, void *, size_t);
+
 struct cnmac_softc *cnmac_port_softc[CNMAC_PIP_PORT_MAX];
 struct cnmac_rx_group cnmac_rx_groups[OCTEON_POW_GROUP_MAX];
 
@@ -540,10 +549,34 @@ cnmac_mii_statchg(struct device *self)
 }
 
 int
+cnmac_pa220_led_sysctl(int port, void *oldp, size_t *oldlenp, void *newp,
+    size_t newlen)
+{
+	struct cnmac_softc *sc;
+	int mode, error;
+
+	if (port < 1 || port > PA220_LED_PORTS)
+		return EINVAL;
+	sc = cnmac_led_ports[port - 1];
+	if (sc == NULL)
+		return ENODEV;
+	error = cn30xxsmi_pa220_leds(sc->sc_smi, sc->sc_phy_addr, -1, &mode);
+	if (error)
+		return error;
+	error = sysctl_int_bounded(oldp, oldlenp, newp, newlen, &mode, 0, 255);
+	if (error || newp == NULL)
+		return error;
+	if ((mode & 15) > 11 || (mode >> 4) > 11)
+		return EINVAL;
+	return cn30xxsmi_pa220_leds(sc->sc_smi, sc->sc_phy_addr, mode, &mode);
+}
+
+int
 cnmac_mediainit(struct cnmac_softc *sc)
 {
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	struct mii_softc *child;
+	int root, mode;
 
 	sc->sc_mii.mii_ifp = ifp;
 	sc->sc_mii.mii_readreg = cnmac_mii_readreg;
@@ -576,6 +609,17 @@ cnmac_mediainit(struct cnmac_softc *sc)
 		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER | IFM_MANUAL);
 	} else {
 		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER | IFM_AUTO);
+		root = OF_finddevice("/");
+		if (sc->sc_dev.dv_unit < PA220_LED_PORTS &&
+		    sc->sc_phy_addr >= 8 && sc->sc_phy_addr <= 15 &&
+		    child->mii_model == MII_MODEL_MARVELL_E1680 &&
+		    root != -1 && OF_is_compatible(root, "pan,pa-220")) {
+			cnmac_led_ports[sc->sc_dev.dv_unit] = sc;
+			if (cn30xxsmi_pa220_leds(sc->sc_smi, sc->sc_phy_addr,
+			    PA220_LED_LINK_ACTIVITY, &mode) != 0)
+				printf("%s: could not set jack LEDs\n",
+				    sc->sc_dev.dv_xname);
+		}
 	}
 
 	return 0;

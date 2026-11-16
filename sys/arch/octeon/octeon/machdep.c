@@ -88,6 +88,11 @@
 #include <machine/octeon_model.h>
 
 #include "octboot.h"
+#include "cnmac.h"
+
+#if NCNMAC > 0
+int cnmac_pa220_led_sysctl(int, void *, size_t *, void *, size_t);
+#endif
 
 /* The following is used externally (sysctl_hw) */
 char	machine[] = MACHINE;		/* Machine "architecture" */
@@ -933,7 +938,12 @@ int
 cpu_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
     size_t newlen, struct proc *p)
 {
-	/* All sysctl names at this level are terminal. */
+#if NCNMAC > 0
+	if (namelen == 2 && name[0] == CPU_PA220_LEDS)
+		return cnmac_pa220_led_sysctl(name[1], oldp, oldlenp, newp,
+		    newlen);
+#endif
+
 	if (namelen != 1)
 		return ENOTDIR;		/* Overloaded */
 

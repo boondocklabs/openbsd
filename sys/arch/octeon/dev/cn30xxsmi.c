@@ -30,6 +30,7 @@
 #include <sys/systm.h>
 #include <sys/stdint.h>
 
+#include <dev/mii/eephyreg.h>
 #include <dev/ofw/fdt.h>
 #include <dev/ofw/openfirm.h>
 
@@ -84,6 +85,7 @@ cn30xxsmi_attach(struct device *parent, struct device *self, void *aux)
 		return;
 	}
 
+	mtx_init(&sc->sc_mtx, IPL_NET);
 	SLIST_INSERT_HEAD(&smi_list, sc, sc_link);
 
 	printf("\n");
@@ -92,8 +94,8 @@ cn30xxsmi_attach(struct device *parent, struct device *self, void *aux)
 	_SMI_WR8(sc, SMI_EN_OFFSET, SMI_EN_EN);
 }
 
-int
-cn30xxsmi_read(struct cn30xxsmi_softc *sc, int phy_addr, int reg)
+static int
+smi_read_locked(struct cn30xxsmi_softc *sc, int phy_addr, int reg)
 {
 	uint64_t smi_rd;
 	int timo;
@@ -117,8 +119,8 @@ cn30xxsmi_read(struct cn30xxsmi_softc *sc, int phy_addr, int reg)
 	return ISSET(smi_rd, SMI_RD_DAT_VAL) ? (smi_rd & SMI_RD_DAT_DAT) : 0;
 }
 
-void
-cn30xxsmi_write(struct cn30xxsmi_softc *sc, int phy_addr, int reg, int value)
+static void
+smi_write_locked(struct cn30xxsmi_softc *sc, int phy_addr, int reg, int value)
 {
 	uint64_t smi_wr;
 	int timo;
@@ -143,6 +145,84 @@ cn30xxsmi_write(struct cn30xxsmi_softc *sc, int phy_addr, int reg, int value)
 		printf("ERROR: cnmac_mii_writereg(0x%x, 0x%x, 0x%x) timed out.\n",
 		    phy_addr, reg, value);
 	}
+}
+
+int
+cn30xxsmi_read(struct cn30xxsmi_softc *sc, int phy, int reg)
+{
+	int val;
+
+	mtx_enter(&sc->sc_mtx);
+	val = smi_read_locked(sc, phy, reg);
+	mtx_leave(&sc->sc_mtx);
+	return val;
+}
+
+void
+cn30xxsmi_write(struct cn30xxsmi_softc *sc, int phy, int reg, int val)
+{
+	mtx_enter(&sc->sc_mtx);
+	smi_write_locked(sc, phy, reg, val);
+	mtx_leave(&sc->sc_mtx);
+}
+
+#define M1680_LED_PAGE		3
+#define M1680_LED_FUNC		16
+#define M1680_LED_POL		17
+#define M1680_MAC_PAGE		4
+#define M1680_MAC_CTRL		27
+#define M1680_LED_MATRIX	(1 << 5)
+#define PA220_LED_POL		0x4400
+
+/*
+ * PA-220 jack LEDs use the 88E1680 matrix. Keep the SMI bus locked
+ * across page changes and restore the page selected by the caller.
+ */
+int
+cn30xxsmi_pa220_leds(struct cn30xxsmi_softc *sc, int phy, int mode, int *current)
+{
+	int page, val, error = EIO;
+
+	mtx_enter(&sc->sc_mtx);
+	page = smi_read_locked(sc, phy, E1000_EADR);
+	if (page < 0)
+		goto out;
+	if (mode >= 0) {
+		smi_write_locked(sc, phy, E1000_EADR, M1680_MAC_PAGE);
+		if (smi_read_locked(sc, phy, E1000_EADR) != M1680_MAC_PAGE)
+			goto restore;
+		val = smi_read_locked(sc, phy, M1680_MAC_CTRL);
+		if (val < 0)
+			goto restore;
+		smi_write_locked(sc, phy, M1680_MAC_CTRL, val | M1680_LED_MATRIX);
+		val = smi_read_locked(sc, phy, M1680_MAC_CTRL);
+		if (val < 0 || !ISSET(val, M1680_LED_MATRIX))
+			goto restore;
+	}
+	smi_write_locked(sc, phy, E1000_EADR, M1680_LED_PAGE);
+	if (smi_read_locked(sc, phy, E1000_EADR) != M1680_LED_PAGE)
+		goto restore;
+	if (mode >= 0) {
+		val = smi_read_locked(sc, phy, M1680_LED_FUNC);
+		if (val < 0)
+			goto restore;
+		smi_write_locked(sc, phy, M1680_LED_FUNC, (val & 0xff00) | mode);
+		smi_write_locked(sc, phy, M1680_LED_POL, PA220_LED_POL);
+		if (smi_read_locked(sc, phy, M1680_LED_POL) != PA220_LED_POL)
+			goto restore;
+	}
+	val = smi_read_locked(sc, phy, M1680_LED_FUNC);
+	if (val < 0 || (mode >= 0 && (val & 0xff) != mode))
+		goto restore;
+	*current = val & 0xff;
+	error = 0;
+restore:
+	smi_write_locked(sc, phy, E1000_EADR, page);
+	if (smi_read_locked(sc, phy, E1000_EADR) != page)
+		error = EIO;
+out:
+	mtx_leave(&sc->sc_mtx);
+	return error;
 }
 
 int

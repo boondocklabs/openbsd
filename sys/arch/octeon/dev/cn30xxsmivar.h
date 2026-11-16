@@ -29,9 +29,12 @@
 #ifndef _CN30XXSMIVAR_H_
 #define _CN30XXSMIVAR_H_
 
+#include <sys/mutex.h>
+
 struct cn30xxsmi_softc {
 	struct device		sc_dev;
 	int			sc_node;
+	struct mutex		sc_mtx;
 
 	bus_space_tag_t		sc_regt;
 	bus_space_handle_t	sc_regh;
@@ -41,6 +44,8 @@ struct cn30xxsmi_softc {
 
 int	cn30xxsmi_read(struct cn30xxsmi_softc *, int, int);
 void	cn30xxsmi_write(struct cn30xxsmi_softc *, int, int, int);
+
+int	cn30xxsmi_pa220_leds(struct cn30xxsmi_softc *, int, int, int *);
 
 int	cn30xxsmi_get_phy(int, int, struct cn30xxsmi_softc **, int *);
 

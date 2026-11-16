@@ -121,7 +121,7 @@ file	arch/octeon/dev/cn30xxgmx.c			octgmx
 
 device	cnmac: ether, ifnet, mii, ifmedia
 attach	cnmac at octgmx
-file	arch/octeon/dev/if_cnmac.c			cnmac
+file	arch/octeon/dev/if_cnmac.c			cnmac needs-flag
 
 attach	com at fdt_octeon with octuart
 file	arch/octeon/dev/cn30xxuart.c			octuart
