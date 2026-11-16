@@ -8,13 +8,25 @@
 #include <string.h>
 
 #define CPU_PA220_LEDS 6
+#define CPU_PA220_FRONT_LEDS 7
 #define PA220_PORTS 8
+
+static const char * const front_leds[] = { "ha", "alm", "stat" };
+static const char * const front_colors[] = {
+	"off", "green", "orange", "both", "heartbeat"
+};
+#define FRONT_LED_COUNT (sizeof(front_leds) / sizeof(front_leds[0]))
+#define FRONT_MODE_COUNT (sizeof(front_colors) / sizeof(front_colors[0]))
 
 static void
 usage(void)
 {
 	fprintf(stderr, "usage: pa220-leds [port [link-activity | link | "
-	    "combined | off | 0xRL]]\n");
+		    "combined | off | 0xRL]]\n"
+	    "       pa220-leds front\n"
+	    "       pa220-leds stat [off | green | orange | heartbeat]\n"
+	    "       pa220-leds ha [off | green | orange]\n"
+	    "       pa220-leds alm [off | green | red]\n");
 	exit(1);
 }
 
@@ -58,6 +70,36 @@ show_port(int port, int requested)
 	printf("port %d (cnmac%d): 0x%02x\n", port, port - 1, mode);
 }
 
+static void
+show_front(size_t led, const char *requested)
+{
+	int mib[] = { CTL_MACHDEP, CPU_PA220_FRONT_LEDS, led };
+	const char *color;
+	int mode;
+	size_t len = sizeof(mode);
+
+	if (requested != NULL) {
+		if (strcmp(requested, "off") == 0)
+			mode = 0;
+		else if (strcmp(requested, "green") == 0)
+			mode = 1;
+		else if (strcmp(requested, led == 1 ? "red" : "orange") == 0)
+			mode = 2;
+		else if (led == 2 && strcmp(requested, "heartbeat") == 0)
+			mode = 4;
+		else
+			usage();
+		if (sysctl(mib, 3, NULL, NULL, &mode, sizeof(mode)) == -1)
+			err(1, "set %s", front_leds[led]);
+	}
+	if (sysctl(mib, 3, &mode, &len, NULL, 0) == -1)
+		err(1, "read %s", front_leds[led]);
+	if (mode < 0 || (size_t)mode >= FRONT_MODE_COUNT)
+		errx(1, "%s returned an invalid mode", front_leds[led]);
+	color = led == 1 && mode == 2 ? "red" : front_colors[mode];
+	printf("%s: %s\n", front_leds[led], color);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -70,6 +112,20 @@ main(int argc, char **argv)
 		for (port = 1; port <= PA220_PORTS; port++)
 			show_port(port, -1);
 		return 0;
+	}
+
+	if (strcmp(argv[1], "front") == 0) {
+		if (argc != 2)
+			usage();
+		for (size_t i = 0; i < FRONT_LED_COUNT; i++)
+			show_front(i, NULL);
+		return 0;
+	}
+	for (size_t i = 0; i < FRONT_LED_COUNT; i++) {
+		if (strcmp(argv[1], front_leds[i]) == 0) {
+			show_front(i, argc == 3 ? argv[2] : NULL);
+			return 0;
+		}
 	}
 
 	port = strtonum(argv[1], 1, PA220_PORTS, &error);

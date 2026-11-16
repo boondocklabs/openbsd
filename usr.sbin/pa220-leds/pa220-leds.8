@@ -3,12 +3,23 @@
 .Os
 .Sh NAME
 .Nm pa220-leds
-.Nd display or change PA-220 Ethernet jack LED modes
+.Nd display or change PA-220 Ethernet jack and front-panel LED modes
 .Sh SYNOPSIS
 .Nm
 .Oo Ar port
 .Op Ar mode
 .Oc
+.Nm
+.Cm front
+.Nm
+.Cm stat
+.Op Ic off | green | orange | heartbeat
+.Nm
+.Cm ha
+.Op Ic off | green | orange
+.Nm
+.Cm alm
+.Op Ic off | green | red
 .Sh DESCRIPTION
 The
 .Nm
@@ -35,6 +46,13 @@ Turn off both LEDs.
 Set the right and left 88E1680 LED function codes, respectively.
 Each code is a single hexadecimal digit from 0 through b.
 .El
+.Pp
+The
+.Cm front
+command displays the states of the STAT, HA, and ALM indicators.
+The corresponding individual commands display or set their modes.
+STAT defaults to a green double-flash heartbeat once per second.
+TEMP follows the CPU temperature automatically.
 .Pp
 Changes are reset at reboot.
 .Sh EXIT STATUS

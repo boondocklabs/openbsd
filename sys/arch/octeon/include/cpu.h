@@ -104,5 +104,6 @@ hw_setcurcpu(struct cpu_info *ci)
 #include <mips64/cpu.h>
 
 #define CPU_PA220_LEDS	6
+#define CPU_PA220_FRONT_LEDS	7
 
 #endif /* !_MACHINE_CPU_H_ */

@@ -89,6 +89,7 @@
 
 #include "octboot.h"
 #include "cnmac.h"
+#include "pa220led.h"
 
 #if NCNMAC > 0
 int cnmac_pa220_led_sysctl(int, void *, size_t *, void *, size_t);
@@ -931,6 +932,10 @@ process_bootargs(void)
 	}
 }
 
+#if NPA220LED > 0
+int pa220led_sysctl(int, void *, size_t *, void *, size_t);
+#endif
+
 /*
  * Machine dependent system variables.
  */
@@ -944,6 +949,10 @@ cpu_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
 		    newlen);
 #endif
 
+#if NPA220LED > 0
+	if (namelen == 2 && name[0] == CPU_PA220_FRONT_LEDS)
+		return pa220led_sysctl(name[1], oldp, oldlenp, newp, newlen);
+#endif
 	if (namelen != 1)
 		return ENOTDIR;		/* Overloaded */
 
