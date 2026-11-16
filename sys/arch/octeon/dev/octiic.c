@@ -49,6 +49,9 @@ struct octiic_softc {
 	int			 sc_start_sent;
 };
 
+/* The legacy octrtc driver uses the first controller directly. */
+struct i2c_controller *octiic_rtc_tag;
+
 int	octiic_match(struct device *, void *, void *);
 void	octiic_attach(struct device *, struct device *, void *);
 
@@ -147,6 +150,12 @@ octiic_attach(struct device *parent, struct device *self, void *aux)
 	struct fdt_attach_args *faa = aux;
 	struct octiic_softc *sc = (struct octiic_softc *)self;
 	uint32_t freq;
+	uint8_t status;
+
+	if (faa->fa_nreg != 1) {
+		printf(": missing registers\n");
+		return;
+	}
 
 	sc->sc_node = faa->fa_node;
 	sc->sc_iot = faa->fa_iot;
@@ -171,7 +180,8 @@ octiic_attach(struct device *parent, struct device *self, void *aux)
 
 	delay(1000);
 
-	if (octiic_wait(sc, TWSI_STAT_IDLE, I2C_F_POLL) != 0) {
+	if (octiic_reg_read(sc, TWSI_IA_STAT, &status) != 0 ||
+	    status != TWSI_STAT_IDLE) {
 		printf(": reset failed\n");
 		return;
 	}
@@ -198,6 +208,8 @@ octiic_attach(struct device *parent, struct device *self, void *aux)
 	sc->sc_i2c_bus.ib_node = sc->sc_node;
 	sc->sc_i2c_bus.ib_ic = &sc->sc_i2c_tag;
 	i2c_register(&sc->sc_i2c_bus);
+	if (faa->fa_reg[0].addr == 0x0001180000001000ULL)
+		octiic_rtc_tag = &sc->sc_i2c_tag;
 }
 
 int
@@ -313,7 +325,7 @@ octiic_i2c_read_byte(void *cookie, uint8_t *datap, int flags)
 	octiic_reg_read(sc, TWSI_IA_DATA, datap);
 
 	if (flags & I2C_F_STOP)
-		error = octiic_i2c_send_stop(sc, flags);
+		return octiic_i2c_send_stop(sc, flags);
 
 	return 0;
 }

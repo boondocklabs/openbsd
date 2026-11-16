@@ -154,7 +154,7 @@ file	arch/octeon/dev/octgpio.c			octgpio
 
 device	octiic: i2cbus
 attach	octiic at fdt
-file	arch/octeon/dev/octiic.c			octiic
+file	arch/octeon/dev/octiic.c			octiic needs-flag
 
 device	octmmc: sdmmcbus
 attach	octmmc at fdt

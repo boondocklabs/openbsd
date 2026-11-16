@@ -16,12 +16,19 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include "octiic.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/proc.h>
 
 #include <dev/clock_subr.h>
+#include <dev/i2c/i2cvar.h>
+
+#if NOCTIIC > 0
+extern struct i2c_controller *octiic_rtc_tag;
+#endif
 #include <dev/ofw/openfirm.h>
 
 #include <machine/bus.h>
@@ -202,8 +209,29 @@ octrtc_gettime(struct todr_chip_handle *handle, struct timeval *tv)
 	return 0;
 }
 
+static int
+octrtc_read_raw(uint8_t *data, int reg);
+
 int
 octrtc_read(uint8_t *data, int reg)
+{
+#if NOCTIIC > 0
+	int error;
+
+	if (octiic_rtc_tag != NULL) {
+		error = iic_acquire_bus(octiic_rtc_tag, 0);
+		if (error)
+			return error;
+		error = octrtc_read_raw(data, reg);
+		iic_release_bus(octiic_rtc_tag, 0);
+		return error;
+	}
+#endif
+	return octrtc_read_raw(data, reg);
+}
+
+static int
+octrtc_read_raw(uint8_t *data, int reg)
 {
 	int nretries = 5, npoll;
 	union mio_tws_sw_twsi_reg twsi;
@@ -314,8 +342,29 @@ octrtc_settime(struct todr_chip_handle *handle, struct timeval *tv)
 	return EIO;
 }
 
+static int
+octrtc_write_raw(int reg, uint8_t data);
+
 int
 octrtc_write(int reg, uint8_t data)
+{
+#if NOCTIIC > 0
+	int error;
+
+	if (octiic_rtc_tag != NULL) {
+		error = iic_acquire_bus(octiic_rtc_tag, 0);
+		if (error)
+			return error;
+		error = octrtc_write_raw(reg, data);
+		iic_release_bus(octiic_rtc_tag, 0);
+		return error;
+	}
+#endif
+	return octrtc_write_raw(reg, data);
+}
+
+static int
+octrtc_write_raw(int reg, uint8_t data)
 {
 	union mio_tws_sw_twsi_reg twsi;
 	int i;

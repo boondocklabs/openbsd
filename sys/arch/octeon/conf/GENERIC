@@ -60,6 +60,9 @@ octcib*		at fdt?		# Interrupt controller
 octcit*		at fdt?		# Interrupt controller v3
 octciu*		at fdt?		# Interrupt controller v1
 octgpio*	at fdt?		# GPIO controller
+octiic*		at fdt?		# I2C controller
+iic*		at octiic?
+tmptemp*		at iic?		# TI local and remote temperature sensor
 octmmc*		at fdt?		# MMC host controller
 octpip*		at fdt?		# Packet input processing unit
 sdmmc*		at octmmc?	# SD/MMC bus
