@@ -112,6 +112,11 @@ mainbus_attach(struct device *parent, struct device *self, void *aux)
 	caa.caa_maa.maa_name = "octrtc";
 	config_found(self, &caa.caa_maa, mainbus_print);
 
+	if (node != 0 && OF_is_compatible(node, "pan,pa-220")) {
+		caa.caa_maa.maa_name = "pa220led";
+		config_found(self, &caa.caa_maa, mainbus_print);
+	}
+
 #ifdef CRYPTO
 	if (!ISSET(octeon_get_cvmctl(), COP_0_CVMCTL_NOCRYPTO)) {
 		caa.caa_maa.maa_name = "octcrypto";

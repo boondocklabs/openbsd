@@ -38,6 +38,7 @@ simplebus*	at iobus?
 
 octcrypto0	at mainbus0
 octrtc0		at mainbus0
+pa220led0	at mainbus0
 
 octcf0		at iobus0
 amdcf0		at iobus0

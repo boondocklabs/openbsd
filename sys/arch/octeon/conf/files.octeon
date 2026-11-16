@@ -62,6 +62,10 @@ device	octrtc
 attach	octrtc at mainbus
 file	arch/octeon/dev/octrtc.c			octrtc
 
+device	pa220led
+attach	pa220led at mainbus
+file	arch/octeon/dev/pa220led.c		pa220led
+
 define	iobus {[base = -1], [irq = 0]}
 device	iobus
 attach	iobus at mainbus
